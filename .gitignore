@@ -1,0 +1,66 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+qa-ag/
+
+# Project data/cache (local only)
+chroma-db/
+.cache/
+logs/
+*.log
+tmp/
+temp/
+
+# Test & coverage
+.pytest_cache/
+.coverage*
+htmlcov/
+.tox/
+.nox/
+
+# Type checking
+.mypy_cache/
+.pytype/
+.pyre/
+
+# Packaging/build artifacts
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/
+
+# IDE/editor settings
+.vscode/
+.idea/
+*.code-workspace
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Environment/config
+.env
+.env.*
+.envrc
+.python-version
+
+# Swap/backup files
+*.swp
+*.swo
+*~
+*.bak
+*.tmp
+
+# Large local docs (remove if you intend to version these)
+MR-releaseNotes/
+
