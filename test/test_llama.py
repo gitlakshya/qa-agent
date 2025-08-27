@@ -1,3 +1,4 @@
+import logging
 from langchain_ollama import OllamaLLM
 
 # Test with the smaller llama model
@@ -7,9 +8,10 @@ llm = OllamaLLM(
     timeout=30
 )
 
-print("Testing with llama3.1...")
+logger = logging.getLogger(__name__)
+logger.info("Testing with llama3.1...")
 try:
     response = llm.invoke("Say hello")
-    print(f"Success! Response: {response}")
+    logger.info("Success! Response: %s", response)
 except Exception as e:
-    print(f"Error: {e}")
+    logger.error("Error: %s", e)

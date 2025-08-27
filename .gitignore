@@ -50,7 +50,7 @@ Desktop.ini
 
 # Environment/config
 .env
-.env.*
+.env
 .envrc
 .python-version
 
@@ -61,6 +61,8 @@ Desktop.ini
 *.bak
 *.tmp
 
-# Large local docs (remove if you intend to version these)
+# dataset
 MR-releaseNotes/
+Jira_CSV/
+Related_docs/
 
