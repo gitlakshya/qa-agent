@@ -1,214 +1,211 @@
-import json
-from typing import List, Dict, Optional
 import streamlit as st
-import asyncio
-
-# LangChain & community loaders
-from langchain_community.document_loaders import PyPDFLoader, UnstructuredHTMLLoader, TextLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.prompts import PromptTemplate
+import json
 import sys
 import os
+from pathlib import Path
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from llm.connector import azurellm
-from llm.prompt import build_chain
-from langchain_core.output_parsers import JsonOutputParser
-from langchain.schema import BaseOutputParser
-from retrieval import retrieve_info
-from load_chunk import LoadandChunk
 
-# ---------- Utils ----------
-def truncate_text(text: str, max_chars: int) -> str:
-    if len(text) <= max_chars:
-        return text
-    return text[:max_chars-3] + "..."
+from app.generate import TestCaseGenerator
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
-class DocumentLoader(LoadandChunk):
-    def __init__(self, chunk_size: int = 800, chunk_overlap: int = 100):
-        self.splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+def display_test_cases(test_cases, export_paths=None):
+    """
+    Display test cases in a formatted manner.
+    
+    Args:
+        test_cases: List of test case dictionaries
+        export_paths: Dictionary with 'csv' and 'excel' export paths
+    """
+    if not test_cases:
+        st.warning("No test cases were generated.")
+        return
+    
+    st.success(f"Generated {len(test_cases)} test cases successfully")
+    
+    # Display export information
+    if export_paths:
+        st.info("**Exported Files:**")
+        col1, col2 = st.columns(2)
+        with col1:
+            if 'excel' in export_paths:
+                st.code(f"Excel: {export_paths['excel']}", language=None)
+        with col2:
+            if 'csv' in export_paths:
+                st.code(f"CSV: {export_paths['csv']}", language=None)
+    
+    # Display formatted JSON
+    st.json(test_cases)
 
-    def load_pdf(self, path: str):
-        loader = PyPDFLoader(path)
-        docs = loader.load()
-        return self.splitter.split_documents(docs)
-
-    def load_html(self, path: str):
-        loader = UnstructuredHTMLLoader(path)
-        docs = loader.load()
-        return self.splitter.split_documents(docs)
-
-    def load_text(self, path: str):
-        loader = TextLoader(path, encoding="utf-8")
-        docs = loader.load()
-        return self.splitter.split_documents(docs)
-
-    def load_any(self, path: str):
-        path = path.lower()
-        if path.endswith(".pdf"):
-            return self.load_pdf(path)
-        if path.endswith(".html") or path.endswith(".htm"):
-            return self.load_html(path)
-        if path.endswith(".txt") or path.endswith(".md"):
-            return self.load_text(path)
-        raise ValueError(f"Unsupported file type for {path}")
-
-
-class FeatureRouter:
-    def __init__(self, llm, keyword_map: Dict[str, str], router_prompt_max_chars: int = 5000):
-        self.llm = llm
-        self.keyword_map = keyword_map
-        self.router_template = PromptTemplate(
-            input_variables=["story", "candidates"],
-            template=(
-                "You are a smart document router. Given the USER STORY, return a JSON array of "
-                "the NAMES (not full paths) of the feature documents that are relevant. "
-                "Only return the JSON array and nothing else.\n\n"
-                "USER STORY:\n{story}\n\n"
-                "AVAILABLE FEATURE DOCS:\n{candidates}\n\n"
-                "Pick the most relevant 1-3 feature doc names."
-            )
-        )
-        self.router_prompt_max_chars = router_prompt_max_chars
-        self.output_parser: BaseOutputParser = JsonOutputParser()
-
-    def _build_candidates_text(self) -> str:
-        return "\n".join(f"- {name}" for name in self.keyword_map.keys())
-
-    async def route(self, story: str, max_retries: int = 2) -> List[str]:
-        candidates = self._build_candidates_text()
-        prompt = self.router_template.format(
-            story=truncate_text(story, self.router_prompt_max_chars),
-            candidates=candidates
-        )
-
-        for attempt in range(max_retries):
-            raw = await self.llm.ainvoke(prompt)
-            try:
-                parsed = self.output_parser.parse(raw.content if hasattr(raw, 'content') else str(raw))
-                if isinstance(parsed, list) and len(parsed) > 0:
-                    result = [str(x).strip() for x in parsed]
-                    selected = [r for r in result if r in self.keyword_map]
-                    if selected:
-                        return selected
-            except Exception:
-                pass
-
-            lowers = story.lower()
-            hits = [name for name in self.keyword_map if name.lower() in lowers]
-            if hits:
-                return hits
-        return []
-
-class RetrieverlessQAPipeline:
-    def __init__(self, llm, doc_loader: DocumentLoader, max_context_chars: int = 32000):
-        self.llm = llm
-        self.doc_loader = doc_loader
-        self.max_context_chars = max_context_chars
-        self.qa_template = PromptTemplate(
-            input_variables=["story", "master", "features"],
-            template=(
-                "You are an Expert AI QA Agent and product SME. Your task is to analyse the user story for logical challenges, impacted areas, etc.\n\n"
-                "USER STORY:\n{story}\n\n"
-                "MASTER DOCUMENT (overview):\n{master}\n\n"
-                "SELECTED FEATURE DOCUMENTS (detailed):\n{features}\n\n"
-                "TASK:\n1) Analyse the features story and impacted modules/features .\n"
-                "2) Generate all possible detailed test cases (Positive, Negative, Edge, security, etc.). Each test case must have:\n"
-                "  - Reference, Type, Title, Preconditions, Steps, ExpectedResult\n\n"
-                "Output ONLY a JSON array (no explanations)."
-                "Return a single valid JSON array with those test cases."
-            )
-        )
-        self.output_parser: BaseOutputParser = JsonOutputParser()
-
-    def _join_docs_content(self, docs) -> str:
-        return "\n\n".join([d.page_content for d in docs])
-
-    async def generate(self, story: str, master_path: str, feature_paths: List[str]) -> Optional[List[Dict]]:
-        master_chunks = self.doc_loader.load_any(master_path)
-        master_text = self._join_docs_content(master_chunks)
-
-        feature_texts = []
-        for p in feature_paths:
-            try:
-                chunks = self.doc_loader.load_any(p)
-                feature_texts.append(self._join_docs_content(chunks))
-            except Exception as e:
-                feature_texts.append(f"[Failed to load {p}: {e}]")
-
-        combined_context = master_text + "\n\n" + "\n\n".join(feature_texts)
-        combined_context = truncate_text(combined_context, self.max_context_chars)
-
-        prompt = self.qa_template.format(
-            story=truncate_text(story, 2000),
-            master=truncate_text(master_text, 2000),
-            features=truncate_text("\n\n".join(feature_texts), 4000)
-        )
-
-        raw = await self.llm.ainvoke(prompt)
-        try:
-            parsed = self.output_parser.parse(raw.content if hasattr(raw, 'content') else str(raw))
-            return parsed
-        except Exception:
-            return None
 
 
 def main():
-    st.title("QA Agent - Test Case Generator")
+    """Main application function."""
+    
+    # Page configuration
+    st.set_page_config(
+        page_title="Test Case Generator",
+        page_icon="📝",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+    
+    # Header
+    st.title("Test Case Generator")
+    st.markdown("Generate comprehensive test cases from user stories using AI-powered analysis")
+    
+    # Sidebar - Document Configuration
+    with st.sidebar:
+        st.header("Document Configuration")
+        
+        # Product documentation path
+        product_doc_default = "Related_docs/Requests_Module_Documentation_v13.0.0.0.pdf"
+        product_doc_path = st.text_input(
+            "Product Documentation Path",
+            value=product_doc_default,
+            help="Path to main product documentation file"
+        )
+        
+        # Feature documentation directory
+        feature_docs_default = "Related_docs"
+        feature_docs_dir = st.text_input(
+            "Feature Documentation Directory",
+            value=feature_docs_default,
+            help="Directory containing feature-specific documentation"
+        )
+        
+        # Output directory
+        output_dir_default = "./test_cases_output"
+        output_dir = st.text_input(
+            "Output Directory",
+            value=output_dir_default,
+            help="Directory where test cases will be exported"
+        )
+        
+        # Store in session state
+        if 'config' not in st.session_state:
+            st.session_state['config'] = {}
+        
+        st.session_state['config']['product_doc_path'] = product_doc_path
+        st.session_state['config']['feature_docs_dir'] = feature_docs_dir
+        st.session_state['config']['output_dir'] = output_dir
+        
+        st.markdown("---")
+        st.subheader("Instructions")
+        st.markdown("""
+        1. Configure document paths above
+        2. Enter user story with Jira ID
+        3. Click Generate
+        4. Test cases auto-export to Excel and CSV
+        """)
+        
+        # Advanced settings
+        with st.expander("Advanced Settings"):
+            show_logs = st.checkbox("Enable detailed logging", value=False)
+            if show_logs:
+                logging.getLogger().setLevel(logging.DEBUG)
+            else:
+                logging.getLogger().setLevel(logging.INFO)
+    
+    # Main content area
+    st.header("User Story Input")
+    
+    # Instructional placeholder
+    placeholder_text = """Example format:
 
-    story = st.text_area("Enter User Story", height=300)
-    approach = st.radio("Choose Approach", ("Router (No Vector DB)", "Vector DB"))
-
-    if st.button("Generate Test Cases"):
+JIRA-ID - [Summary]
+[Description
+    This is a user story description]"""
+    
+    # Text area for user story
+    story = st.text_area(
+        "Enter your user story (include Jira ID for better file naming):",
+        height=300,
+        placeholder=placeholder_text,
+        help="Include Jira ID (e.g., MR-2559) at the beginning for automatic file naming"
+    )
+    
+    # Generate button
+    col1, col2, col3 = st.columns([2, 6, 2])
+    
+    with col1:
+        generate_button = st.button("Generate Test Cases", type="primary", use_container_width=True)
+    
+    # Generate test cases
+    if generate_button:
         if not story.strip():
-            st.warning("Please enter a user story.")
+            st.warning("Please enter a user story before generating test cases")
             return
-
-        doc_loader = DocumentLoader()
-
-        keyword_map = {
-            "Documents": r"./Related_docs/Documents Feature.pdf",
-            "Comments": r"./Related_docs/Comments Feature.pdf",
-            "Request Type Form Builder": r"./Related_docs/Request Type Configurable Form.pdf",
-            "Request via email": r"./Related_docs/Request_via_Email_Feature.pdf"
-        }
-
-        master_doc_path = r"./Related_docs/MR.pdf"
-
-        async def run_pipeline():
-            if approach == "Router (No Vector DB)":
-                router = FeatureRouter(llm=azurellm, keyword_map=keyword_map)
-                qa = RetrieverlessQAPipeline(llm=azurellm, doc_loader=doc_loader)
-
-                selected_feature_names = await router.route(story)
-                st.write("Router chose:", selected_feature_names)
-
-                selected_paths = [keyword_map[name] for name in selected_feature_names if name in keyword_map]
-                testcases = await qa.generate(story, master_doc_path, selected_paths)
-
-                if testcases:
-                    st.json(testcases)
-                else:
-                    st.error("Failed to generate valid JSON test cases.")
-
-            elif approach == "Vector DB":
-                st.write("### Vector DB Chunks")
-
-                chain = build_chain(azurellm)
-
-                context = retrieve_info(story)
-                st.write("### Context", context)
+        
+        try:
+            # Show progress
+            with st.spinner("Analyzing user story and generating test cases..."):
+                progress_bar = st.progress(0)
+                status_text = st.empty()
                 
-                raw = chain.invoke({"user_story": story, "context": context})
+                status_text.text("Extracting features...")
+                progress_bar.progress(25)
+                
+                # Initialize generator with auto-export and paths from config
+                config = st.session_state.get('config', {})
+                generator = TestCaseGenerator(
+                    auto_export=True,
+                    product_doc_path=config.get('product_doc_path'),
+                    feature_docs_dir=config.get('feature_docs_dir', 'Related_docs/MR_features')
+                )
+                
+                status_text.text("Loading documentation...")
+                progress_bar.progress(50)
+                
+                status_text.text("Generating test cases...")
+                progress_bar.progress(75)
+                
+                # Generate test cases (auto-exports)
+                result = generator.generate_test_cases(story)
+                
+                status_text.text("Exporting results...")
+                progress_bar.progress(100)
+                
+                # Clear progress indicators
+                progress_bar.empty()
+                status_text.empty()
+            
+            # Display results with export paths
+            if result:
+                export_paths = getattr(generator, 'last_export_paths', {})
+                display_test_cases(result, export_paths=export_paths)
+            else:
+                st.warning("No test cases were generated")
+                
+        except FileNotFoundError as e:
+            st.error(f"Documentation Error: {str(e)}")
+            st.info("Please verify the document paths in the sidebar configuration")
+            logger.error(f"File not found: {e}")
+            
+        except ValueError as e:
+            st.error(f"Validation Error: {str(e)}")
+            logger.error(f"Validation error: {e}")
+            
+        except Exception as e:
+            st.error(f"Generation Failed: {str(e)}")
+            
+            with st.expander("Error Details"):
+                st.code(str(e))
+                import traceback
+                st.code(traceback.format_exc())
+            
+            logger.error(f"Generation failed: {e}", exc_info=True)
+    
+    # Footer
 
-                try:
-                    output_parser = JsonOutputParser()
-                    testcases = output_parser.parse(raw.content if hasattr(raw, 'content') else str(raw))
-                    st.json(testcases)
-                except Exception:
-                    st.error("Failed to parse JSON test cases.")
-
-        asyncio.run(run_pipeline())
 
 if __name__ == "__main__":
     main()

@@ -1,7 +1,7 @@
 import asyncio
 from llm.connector import azurellm
 from llm.prompt import build_chain
-from app.retrieval import retrieve_info
+from app.generate import retrieve_info
 import json
 
 async def run_example():

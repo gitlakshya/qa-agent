@@ -4,9 +4,6 @@ __pycache__/
 *$py.class
 
 # Virtual environments
-.venv/
-venv/
-env/
 qa-ag/
 
 # Project data/cache (local only)
@@ -65,4 +62,8 @@ Desktop.ini
 MR-releaseNotes/
 Jira_CSV/
 Related_docs/
+qa-agent-469410-58ccab293779*
 
+test_cases_output/
+output*
+pii*

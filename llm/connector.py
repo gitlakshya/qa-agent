@@ -5,7 +5,7 @@ from langchain_ollama import OllamaLLM
 from langchain_azure_ai.chat_models import AzureAIChatCompletionsModel
 from langchain_openai import AzureChatOpenAI
 from dotenv import load_dotenv
-
+from langchain_google_vertexai import ChatVertexAI
 # Disable SSL verification globally
 ssl._create_default_https_context = ssl._create_unverified_context
 
@@ -28,11 +28,18 @@ azurellm = AzureChatOpenAI(
     api_key=os.getenv("AZURE_INFERENCE_CREDENTIAL"),
     azure_deployment=os.getenv("AZURE_DEPLOYMENT_NAME") or os.getenv("AZURE_MODEL_NAME"),
     api_version=os.getenv("AZURE_API_VERSION") or "2024-10-01-preview",
-    #temperature=0.3,
-    #timeout=300
+    temperature=0.7
 )
 
 
+
+
+vertexllm = ChatVertexAI(
+    model_name=os.getenv("VERTEX_MODEL_NAME", "gemini-2.5-pro"),
+    project=os.getenv("VERTEX_PROJECT_ID"),
+    location=os.getenv("VERTEX_LOCATION", "us-central1"),
+    temperature=0.4
+)
 
 llm = OllamaLLM(
     model=_get_model_name(),
@@ -50,4 +57,17 @@ def llm_healthcheck() -> bool:
         return True
     except Exception as e:
         logger.warning("LLM healthcheck failed: %s", e)
+        return False
+
+def vertex_llm_healthcheck() -> bool:
+    """Quick probe to ensure Vertex AI LLM responds."""
+    if vertexllm is None:
+        logger.warning("Vertex AI LLM not initialized")
+        return False
+    try:
+        response = vertexllm.invoke("Hello")
+        logger.debug("Vertex AI LLM ping response: %s", response)
+        return True
+    except Exception as e:
+        logger.warning("Vertex AI LLM healthcheck failed: %s", e)
         return False
