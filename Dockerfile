@@ -51,14 +51,7 @@ RUN useradd -m -u 1000 qaagent && \
     chown -R qaagent:qaagent /app
 
 # Copy application code
-COPY --chown=qaagent:qaagent app/ /app/app/
-COPY --chown=qaagent:qaagent llm/ /app/llm/
-COPY --chown=qaagent:qaagent integrations/ /app/integrations/
-COPY --chown=qaagent:qaagent services/ /app/services/
-COPY --chown=qaagent:qaagent data_pipeline/ /app/data_pipeline/
-COPY --chown=qaagent:qaagent config/ /app/config/
-COPY --chown=qaagent:qaagent manual_sync.py /app/
-COPY --chown=qaagent:qaagent projects.json /app/
+COPY --chown=qaagent:qaagent . /app/
 
 # Create directories for volumes
 RUN mkdir -p \
@@ -79,5 +72,5 @@ EXPOSE 8501
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8501/_stcore/health || exit 1
 
-# Default command (can be overridden in docker-compose)
+# Default command
 CMD ["streamlit", "run", "app/st.py", "--server.port=8501", "--server.address=0.0.0.0"]

@@ -11,8 +11,7 @@ services:
       # Azure OpenAI Configuration
       - AZURE_INFERENCE_ENDPOINT=${AZURE_INFERENCE_ENDPOINT}
       - AZURE_INFERENCE_CREDENTIAL=${AZURE_INFERENCE_CREDENTIAL}
-      - AZURE_DEPLOYMENT_NAME=${AZURE_DEPLOYMENT_NAME}
-      - AZURE_MODEL_NAME=${AZURE_MODEL_NAME:-gpt-4}
+      - AZURE_MODEL_NAME=${AZURE_MODEL_NAME:-gpt-4.1}
       - AZURE_API_VERSION=${AZURE_API_VERSION:-2024-10-01-preview}
       
       # TestRail Configuration
@@ -24,9 +23,6 @@ services:
       - TESTRAIL_RATE_LIMIT=${TESTRAIL_RATE_LIMIT:-180}
       - TESTRAIL_REQUEST_DELAY=${TESTRAIL_REQUEST_DELAY:-0.4}
       
-      # Optional: Ollama Configuration (if using local LLM)
-      # - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
-      # - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.1:latest}
     
     volumes:
       # Mount directories for data persistence
@@ -81,25 +77,11 @@ services:
     depends_on:
       - qa-agent
 
-  # Optional: Ollama for local LLM (uncomment if not using Azure OpenAI)
-  # ollama:
-  #   image: ollama/ollama:latest
-  #   container_name: qa-agent-ollama
-  #   ports:
-  #     - "11434:11434"
-  #   volumes:
-  #     - ollama-data:/root/.ollama
-  #   restart: unless-stopped
-  #   networks:
-  #     - qa-agent-network
 
 networks:
   qa-agent-network:
     driver: bridge
 
 volumes:
-  # Uncomment if using Ollama
-  # ollama-data:
-  #   driver: local
   test-cases:
     driver: local
