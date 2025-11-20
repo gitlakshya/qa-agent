@@ -1,0 +1,70 @@
+# TestRail Field Mapping Configuration
+# Maps Excel columns to TestRail API fields
+
+# Field Mappings
+field_mapping:
+  # Excel Column Name -> TestRail API Field
+  Title: title
+  Precondition: custom_preconds
+  Steps: custom_steps
+  ExpectedResult: custom_expected
+  Reference: refs
+  Type: type_id  # Mapped via TYPE_MAPPING
+
+# Test Case Type Mappings
+# Type Name -> TestRail Type ID
+type_mapping:
+  Acceptance: 1
+  Accessability: 2
+  Automated: 3
+  Compatibility: 4
+  Destructive: 5
+  Functional: 6
+  Other: 7
+  Performance: 8
+  Regression: 9
+  Security: 10
+  Smoke & Sanity: 11
+  Usability: 12
+# TestRail API Settings
+api:
+  # API version
+  version: v2
+  
+  # Request timeout (seconds)
+  timeout: 30
+  
+  # Retry settings
+  retry_attempts: 3
+  retry_delay: 1.0  # seconds
+  
+  # Rate limiting (TestRail Cloud: 180 requests/minute)
+  rate_limit_delay: 0.4  # seconds between requests
+  
+# Test Case Creation Settings
+test_case:
+  # Always create duplicates (no title checking)
+  check_duplicates: false
+  
+  # Default priority if not specified
+  default_priority_id: 2  # Medium
+  
+  # Default type if not specified
+  default_type_id: 1  # Functional
+
+# Section Creation Settings
+section:
+  # Create section if it doesn't exist
+  auto_create: true
+  
+  # Section naming format
+  # Options: filename | jira_id | custom
+  naming_strategy: filename
+
+# Error Handling
+error_handling:
+  # Continue processing on individual test case errors
+  continue_on_error: true
+  
+  # Log level for TestRail operations
+  log_level: INFO

@@ -138,6 +138,10 @@ class FeatureExtractionService:
                 self.available_features
             )
             
+            # Debug: Log the raw response
+            logger.info(f"Raw LLM response type: {type(response)}")
+            logger.info(f"Raw LLM response: {response}")
+            
             if isinstance(response, str):
                 extracted_data = json.loads(response)
             else:
@@ -156,6 +160,21 @@ class FeatureExtractionService:
             
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse feature extraction response: {e}")
+            logger.error(f"Response content: {response}")
+            
+            # Try to extract JSON from the response if it's wrapped in markdown or text
+            if isinstance(response, str):
+                import re
+                # Try to find JSON object in the response
+                json_match = re.search(r'\{[^{}]*"feature_name"[^{}]*\}', response, re.DOTALL)
+                if json_match:
+                    try:
+                        extracted_data = json.loads(json_match.group(0))
+                        logger.info("Successfully extracted JSON from wrapped response")
+                        return extracted_data
+                    except:
+                        pass
+            
             raise ValueError(f"Invalid JSON response from feature extraction: {e}")
         except Exception as e:
             logger.error(f"Feature extraction failed: {e}")
@@ -181,20 +200,21 @@ class TestCaseGenerator:
     """Generates comprehensive test cases from user stories."""
     
     def __init__(self, llm=None, auto_export: bool = True, 
-                 product_doc_path: str = None, feature_docs_dir: str = "Related_docs"):
+                 product_doc_path: str = None, feature_docs_dir: str = "Related_docs",
+                 project_id: int = None):
         """
         Initialize the test case generator.
         
         Args:
             llm: Language model to use (defaults to azurellm)
-            auto_export: If True, automatically export test cases to CSV and Excel after generation
+            auto_export: If True, automatically export test cases to Excel after generation
             product_doc_path: Path to product documentation
             feature_docs_dir: Directory containing feature documentation PDFs
+            project_id: TestRail project ID for metadata
         """
         self.llm = llm or azurellm
         self.doc_loader = FeatureDocumentationLoader(feature_docs_dir)
         
-        # Scan available features once during initialization
         self.available_features = self.doc_loader.get_available_features()
         logger.info(f"Initialized with {len(self.available_features)} available features")
         
@@ -204,6 +224,9 @@ class TestCaseGenerator:
             llm=self.llm,
             available_features=self.available_features
         )
+        
+        # Store TestRail project information
+        self.project_id = project_id
         
         self.exporter = TestCaseExporter()
         self.auto_export = auto_export
@@ -268,26 +291,19 @@ class TestCaseGenerator:
             
             logger.info(f"Successfully generated {len(test_cases)} test cases")
             
-            # Step 5: Auto-export to CSV and Excel
+            # Step 5: Auto-export to Excel
             should_export = auto_export if auto_export is not None else self.auto_export
             if should_export:
                 self.last_export_paths = {}
                 
-                # Export to CSV
-                csv_path = self.export_test_cases_to_csv(
-                    test_cases,
-                    user_story=user_story
-                )
-                self.last_export_paths['csv'] = csv_path
-                logger.info(f"CSV exported to: {csv_path}")
-                
-                # Export to Excel
+                # Export to Excel with TestRail metadata
                 excel_path = self.export_test_cases_to_excel(
                     test_cases,
-                    user_story=user_story
+                    user_story=user_story,
+                    project_id=self.project_id
                 )
                 self.last_export_paths['excel'] = excel_path
-                logger.info(f"Excel exported to: {excel_path}")
+                logger.info(f"Excel with metadata exported to: {excel_path}")
             
             return test_cases
             
@@ -411,15 +427,17 @@ class TestCaseGenerator:
         self,
         test_cases: List[Dict[str, Any]],
         filename: Optional[str] = None,
-        user_story: Optional[str] = None
+        user_story: Optional[str] = None,
+        project_id: Optional[int] = None
     ) -> str:
         """
-        Export test cases to Excel file.
+        Export test cases to Excel file with TestRail metadata.
         
         Args:
             test_cases: List of test case dictionaries
             filename: Custom filename (optional, auto-generated from user story if not provided)
-            user_story: Full user story to extract filename from
+            user_story: Full user story to extract filename and section name from
+            project_id: TestRail project ID for metadata
             
         Returns:
             str: Path to the exported Excel file
@@ -428,11 +446,22 @@ class TestCaseGenerator:
             Exception: If export fails
         """
         try:
-            excel_path = self.exporter.export_to_excel(
-                test_cases,
-                filename=filename,
-                user_story=user_story
-            )
+            # Use new export method with metadata if project info available
+            if project_id and user_story:
+                excel_path = self.exporter.export_to_excel_with_metadata(
+                    test_cases,
+                    project_id=project_id,
+                    user_story=user_story,
+                    filename=filename
+                )
+            else:
+                # Fallback to standard export
+                excel_path = self.exporter.export_to_excel(
+                    test_cases,
+                    filename=filename,
+                    user_story=user_story
+                )
+            
             logger.info(f"Exported {len(test_cases)} test cases to {excel_path}")
             return excel_path
         except Exception as e:

@@ -2,9 +2,8 @@
 
 import os
 import logging
-from typing import List, Dict, Tuple, Optional
-from collections import defaultdict
-from langchain.schema import Document
+from typing import List, Dict
+from langchain_core.documents import Document
 
 logger = logging.getLogger(__name__)
 
@@ -301,7 +300,7 @@ class SemanticChunker:
             
             # Fallback to simple PDF loading
             from langchain_community.document_loaders import PyPDFLoader
-            from langchain.text_splitter import RecursiveCharacterTextSplitter
+            from langchain_text_splitters import RecursiveCharacterTextSplitter
             
             loader = PyPDFLoader(file_path)
             docs = loader.load()

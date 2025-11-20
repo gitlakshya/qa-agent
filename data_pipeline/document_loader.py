@@ -1,11 +1,8 @@
-"""Document loader for processing multiple directories."""
-
 import os
 import logging
 from typing import List
 from langchain_community.document_loaders import PyPDFLoader, UnstructuredHTMLLoader, TextLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.schema import Document
+from langchain_core.documents import Document
 
 
 from .exceptions import DocumentDirectoryNotFoundError, NoDocumentsFoundError
