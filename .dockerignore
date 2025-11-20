@@ -1,0 +1,92 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+qa-ag/
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test files
+test/
+test_*.py
+*_test.py
+
+# Documentation (build artifacts)
+docs/_build/
+
+# Temporary files
+*.log
+*.tmp
+*.bak
+watcher.pid
+watcher_status.json
+watcher.log
+
+# Data directories (exclude large datasets)
+chroma-db/
+test_cases_output/processed/
+test_cases_output/errors/
+
+# Git
+.git/
+.gitignore
+
+# Docker
+.dockerignore
+Dockerfile
+docker-compose.yml
+
+# Environment files (will be mounted)
+.env
+.env.*
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# CSV and test data
+*.csv
+Jira_CSV/
+
+# Large PDF files (will be mounted)
+MR-releaseNotes/*.pdf
+
+# Service account keys
+*.json
+!projects.json
+!config/*.json
+
+# Markdown documentation (keep in image for reference)
+# Comment out if you want to include docs
+# *.md

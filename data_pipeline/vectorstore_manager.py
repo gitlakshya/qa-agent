@@ -6,7 +6,6 @@ import gc
 from typing import List
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
-from langchain.schema import Document
 import ssl
 
 from .exceptions import EmbeddingModelError, SyncError, VectorStoreCorruptedError

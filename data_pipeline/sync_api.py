@@ -6,7 +6,6 @@ from typing import List, Dict, Any
 from dotenv import load_dotenv
 
 from .vectorstore_manager import VectorStoreManager
-from .exceptions import SyncError
 
 load_dotenv()
 logger = logging.getLogger(__name__)

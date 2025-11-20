@@ -7,6 +7,7 @@ import csv
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any, Optional
@@ -60,38 +61,22 @@ class TestCaseExporter:
             logger.error(f"Failed to create output directory: {e}")
             raise
     
-    def _extract_filename_from_story(self, user_story: str, max_length: int = 15) -> str:
+    def _extract_filename_from_story(self, user_story: str, max_length: int = 40) -> str:
         """
-        Extract a clean filename from user story (first 12-15 chars).
-        Prioritizes Jira-like IDs (e.g., MR-2559, PROJ-123).
+        Extract a clean filename from user story (first 40 chars).
+        Uses the user story text directly for better context.
         
         Args:
             user_story: The user story text
-            max_length: Maximum length of extracted filename
+            max_length: Maximum length of extracted filename (default 40)
             
         Returns:
             Sanitized filename string
         """
         import re
         
-        # Try to find Jira-like pattern (e.g., MR-2559, PROJ-123)
-        jira_pattern = r'\b([A-Z]+-\d+)\b'
-        jira_match = re.search(jira_pattern, user_story)
-        
-        if jira_match:
-            # Found Jira ID, use it as base
-            base = jira_match.group(1)
-            # Get some additional context (next few words)
-            after_jira = user_story[jira_match.end():].strip()
-            words = after_jira.split()[:3]  # Take next 3 words
-            if words:
-                base = f"{base}_{' '.join(words)}"
-        else:
-            # No Jira ID, use first part of story
-            base = user_story.strip()
-        
-        # Take first max_length characters
-        base = base[:max_length]
+        # Take first max_length characters directly from user story
+        base = user_story.strip()[:max_length]
         
         # Sanitize for filename: keep alphanumeric, hyphens, underscores
         sanitized = re.sub(r'[^\w\s-]', '', base)
@@ -373,6 +358,132 @@ class TestCaseExporter:
         except Exception as e:
             logger.error(f"Failed to export to Excel: {e}")
             raise IOError(f"Excel export failed: {e}")
+    
+    def export_to_excel_with_metadata(
+        self,
+        test_cases: List[Dict[str, Any]],
+        project_id: str,
+        user_story: str,
+        filename: Optional[str] = None
+    ) -> str:
+        """
+        Export test cases to Excel with TestRail metadata sheet.
+        Creates two sheets:
+        1. Metadata: Contains Project_ID and Section_Name (using filename as section name)
+        2. Test Cases: Contains test cases without Feature column, with TestRail result columns
+        
+        Args:
+            test_cases: List of test case dictionaries
+            project_id: TestRail project ID
+            user_story: Full user story text (used to generate filename/section name)
+            filename: Optional custom filename
+            
+        Returns:
+            Full path to the created Excel file as string
+            
+        Raises:
+            ImportError: If pandas or openpyxl not installed
+            ValueError: If no test cases to export
+        """
+        if not test_cases:
+            raise ValueError("No test cases to export")
+        
+        try:
+            import pandas as pd
+            from openpyxl.utils import get_column_letter
+        except ImportError:
+            raise ImportError("pandas and openpyxl are required. Install with: pip install pandas openpyxl")
+        
+        # Generate filename
+        excel_filename = self._generate_filename(
+            extension="xlsx",
+            user_story=user_story,
+            custom_filename=filename
+        )
+        
+        filepath = self.output_dir / excel_filename
+        
+        try:
+            # Use filename (without extension) as section name
+            section_name = excel_filename.replace('.xlsx', '')
+            
+            # Create metadata DataFrame (only Project_ID and Section_Name)
+            metadata_df = pd.DataFrame({
+                'Field': ['Project_ID', 'Section_Name'],
+                'Value': [project_id, section_name]
+            })
+            
+            # Prepare test cases data (without Feature column)
+            export_data = []
+            for test_case in test_cases:
+                row = {
+                    'Reference': test_case.get('Reference', ''),
+                    'Type': test_case.get('Type', ''),
+                    'Title': test_case.get('Title', ''),
+                    'Precondition': test_case.get('Precondition', ''),
+                    'Steps': '',
+                    'ExpectedResult': test_case.get('ExpectedResult', ''),
+                    # TestRail result columns (empty, will be populated after push)
+                    'TestRail_ID': '',
+                    'TestRail_URL': '',
+                    'Push_Status': '',
+                    'Push_Timestamp': '',
+                    'Error_Message': ''
+                }
+                
+                # Format steps
+                steps = test_case.get('Steps', [])
+                if isinstance(steps, list):
+                    row['Steps'] = '\n'.join([f"{i+1}. {step}" for i, step in enumerate(steps)])
+                else:
+                    row['Steps'] = str(steps)
+                
+                export_data.append(row)
+            
+            # Create test cases DataFrame
+            test_cases_df = pd.DataFrame(export_data)
+            
+            # Export to Excel with both sheets
+            with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
+                # Write metadata sheet
+                metadata_df.to_excel(writer, index=False, sheet_name='Metadata')
+                
+                # Write test cases sheet
+                test_cases_df.to_excel(writer, index=False, sheet_name='Test Cases')
+                
+                # Format Metadata sheet
+                metadata_ws = writer.sheets['Metadata']
+                metadata_ws.column_dimensions['A'].width = 20
+                metadata_ws.column_dimensions['B'].width = 60
+                
+                # Format Test Cases sheet with specific column widths
+                test_cases_ws = writer.sheets['Test Cases']
+                
+                # Set specific column widths
+                column_widths = {
+                    'A': 15,  # Reference
+                    'B': 12,  # Type
+                    'C': 40,  # Title
+                    'D': 30,  # Precondition
+                    'E': 50,  # Steps
+                    'F': 40,  # ExpectedResult
+                    'G': 15,  # TestRail_ID
+                    'H': 50,  # TestRail_URL
+                    'I': 12,  # Push_Status
+                    'J': 20,  # Push_Timestamp
+                    'K': 30   # Error_Message
+                }
+                
+                for col_letter, width in column_widths.items():
+                    test_cases_ws.column_dimensions[col_letter].width = width
+            
+            logger.info(f"Successfully exported {len(test_cases)} test cases with metadata to Excel: {filepath}")
+            logger.info(f"Project ID: {project_id}, Section: {section_name}")
+            return str(filepath)
+            
+        except Exception as e:
+            logger.error(f"Failed to export to Excel with metadata: {e}")
+            raise IOError(f"Excel export with metadata failed: {e}")
     
     def get_latest_export(self, extension: str = "csv") -> Optional[Path]:
         """

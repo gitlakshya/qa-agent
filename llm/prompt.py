@@ -44,11 +44,12 @@ class testGenerationChain:
             - **Edge**: Boundary/value extremes, special cases, concurrency/timing
             - **Regression**: Historical flows that must stay unbroken
             - **Security**: Access, authorization, injection, data protection
+            - **Performance**: 
 
             ## Quality Standards
             - Each test case must state intent, preconditions, clear steps, and a verifiable expected result.
             - Every impact point must be covered by at least one unique test.
-            - Reference IDs must be sequential: TC-001, TC-002, ...
+            - Reference ID must be jira id from user story (till first blank space)
 
             ## Output
             - Output **only** a valid JSON array (no explanations/markdown).
@@ -58,7 +59,7 @@ class testGenerationChain:
 
             [
                 [
-                    "Reference": "TC-001",
+                    "Reference": "JIRA ID from user story",
                     "Type": "Functional|Integration|Negative|Edge|Regression|Security",
                     "Title": "Brief test case description",
                     "Precondition": "System state or setup before execution",
@@ -101,12 +102,6 @@ class FeatureExtractionChain:
         pass
 
     def featureExtractionPrompt(self, available_features=None):
-        """
-        Create prompt template for feature extraction with dynamic available features list.
-        
-        Args:
-            available_features: List of available feature document names (without .pdf extension)
-        """
         # Format available features as bullet list
         if available_features and len(available_features) > 0:
             features_list = "\n                ".join([f"- {feature}" for feature in available_features])
@@ -146,13 +141,13 @@ class FeatureExtractionChain:
                 - Map the user story's verbs and nouns to features logically.
                 - Identify cross-feature interactions carefully (e.g., requests impacting tasks or dashboards).
 
-                ### Output
-                Return ONLY valid JSON in this exact format (no explanations, no markdown):
+                ### CRITICAL: Output Format
+                You MUST respond with ONLY a valid JSON object. No explanations, no markdown, no code blocks.
+                
+                Use this EXACT format but with json curly braces in outer:
+                ["feature_name": "<primary_feature_name>", "dependent_features": ["<feature1>", "<feature2>"]]
 
-                "feature_name": "<primary_feature_name>",
-                "dependent_features": ["<feature1>", "<feature2>"]
-
-                If no dependent features are found, return an empty list.
+                If no dependent features are found, use an empty array: ["feature_name": "<name>", "dependent_features": []]
                 """
             ),
             HumanMessagePromptTemplate.from_template(
@@ -164,7 +159,7 @@ class FeatureExtractionChain:
                 {product_documentation}
 
                 Based on the documentation and story, extract the primary feature and its dependent/impacted features.
-                Think internally step-by-step but return ONLY the JSON output.
+                Return ONLY the JSON object. Start with {{ and end with }}.
                 """
             )
         ])

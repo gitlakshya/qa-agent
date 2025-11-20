@@ -17,6 +17,41 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def load_active_projects():
+    """
+    Load active TestRail projects from projects.json.
+    Filters out completed projects and sorts by name.
+    
+    Returns:
+        List of active project dictionaries
+    """
+    try:
+        projects_file = Path(__file__).parent.parent / 'projects.json'
+        
+        if not projects_file.exists():
+            logger.warning(f"projects.json not found at {projects_file}")
+            return []
+        
+        with open(projects_file, 'r') as f:
+            data = json.load(f)
+        
+        # Filter out completed projects
+        active_projects = [
+            p for p in data.get('projects', []) 
+            if not p.get('is_completed', False)
+        ]
+        
+        # Sort by name for easier selection
+        active_projects.sort(key=lambda x: x.get('name', ''))
+        
+        logger.info(f"Loaded {len(active_projects)} active projects")
+        return active_projects
+        
+    except Exception as e:
+        logger.error(f"Failed to load projects.json: {e}")
+        return []
+
+
 def display_test_cases(test_cases, export_paths=None):
     """
     Display test cases in a formatted manner.
@@ -116,21 +151,72 @@ def main():
                 logging.getLogger().setLevel(logging.INFO)
     
     # Main content area
+    
+    # ===== TestRail Project Selection =====
+    st.header("TestRail Project Selection")
+    
+    # Load projects
+    projects = load_active_projects()
+    
+    if not projects:
+        st.error("Unable to load TestRail projects. Please ensure projects.json exists.")
+        st.info("Expected location: `projects.json` in the root directory")
+        return
+    
+    # Project selection dropdown
+    project_names = [p['name'] for p in projects]
+    
+    selected_project_name = st.selectbox(
+        "Select target TestRail project:",
+        options=project_names,
+        help="Test cases will be pushed to this project after review"
+    )
+    
+    # Get selected project details
+    selected_project = next((p for p in projects if p['name'] == selected_project_name), None)
+    
+    if selected_project:
+        project_id = selected_project['id']
+        project_url = selected_project.get('url', '')
+        
+        # Display project info in an info box
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.info(f"**Project ID:** `{project_id}` | **Suite Mode:** Single Suite (auto-detected)")
+        with col2:
+            if project_url:
+                st.markdown(f"[View in TestRail ↗]({project_url})")
+        
+        # Store selected project in session state
+        if 'selected_project' not in st.session_state:
+            st.session_state['selected_project'] = {}
+        
+        st.session_state['selected_project']['id'] = project_id
+        st.session_state['selected_project']['name'] = selected_project_name
+    
+    st.markdown("---")
+    
+    # ===== User Story Input =====
     st.header("User Story Input")
     
     # Instructional placeholder
     placeholder_text = """Example format:
 
-JIRA-ID - [Summary]
-[Description
-    This is a user story description]"""
+MR-2559 - Verify document management features
+As a user, I want to upload and manage documents
+so that I can organize my files efficiently.
+
+Acceptance Criteria:
+- User can upload documents
+- User can view document list
+- User can delete documents"""
     
     # Text area for user story
     story = st.text_area(
-        "Enter your user story (include Jira ID for better file naming):",
+        "Enter your user story (include Jira ID at the beginning):",
         height=300,
         placeholder=placeholder_text,
-        help="Include Jira ID (e.g., MR-2559) at the beginning for automatic file naming"
+        help="Include Jira ID (e.g., MR-2559) at the beginning for section naming and file organization"
     )
     
     # Generate button
@@ -145,8 +231,13 @@ JIRA-ID - [Summary]
             st.warning("Please enter a user story before generating test cases")
             return
         
+        # Validate project selection
+        selected_proj = st.session_state.get('selected_project', {})
+        if not selected_proj.get('id'):
+            st.error("Please select a TestRail project before generating test cases")
+            return
+        
         try:
-            # Show progress
             with st.spinner("Analyzing user story and generating test cases..."):
                 progress_bar = st.progress(0)
                 status_text = st.empty()
@@ -154,12 +245,13 @@ JIRA-ID - [Summary]
                 status_text.text("Extracting features...")
                 progress_bar.progress(25)
                 
-                # Initialize generator with auto-export and paths from config
+                # Initialize generator with auto-export, project info, and paths from config
                 config = st.session_state.get('config', {})
                 generator = TestCaseGenerator(
                     auto_export=True,
                     product_doc_path=config.get('product_doc_path'),
-                    feature_docs_dir=config.get('feature_docs_dir', 'Related_docs/MR_features')
+                    feature_docs_dir=config.get('feature_docs_dir', 'Related_docs'),
+                    project_id=selected_proj['id']
                 )
                 
                 status_text.text("Loading documentation...")
@@ -168,10 +260,10 @@ JIRA-ID - [Summary]
                 status_text.text("Generating test cases...")
                 progress_bar.progress(75)
                 
-                # Generate test cases (auto-exports)
+                # Generate test cases (auto-exports with project metadata)
                 result = generator.generate_test_cases(story)
                 
-                status_text.text("Exporting results...")
+                status_text.text("Exporting to Excel with TestRail metadata...")
                 progress_bar.progress(100)
                 
                 # Clear progress indicators
@@ -181,7 +273,19 @@ JIRA-ID - [Summary]
             # Display results with export paths
             if result:
                 export_paths = getattr(generator, 'last_export_paths', {})
+                
+                # Show success message with project info
+                st.success(f"Generated {len(result)} test cases for project: **{selected_proj['name']}** (ID: {selected_proj['id']})")
+                
                 display_test_cases(result, export_paths=export_paths)
+                
+                # Show next steps
+                st.info("""
+                **Next Steps:**
+                1. Review and edit test cases in the exported Excel file
+                2. Move the Excel file to `test_cases_output/reviewed/` folder
+                3. Test cases will be automatically pushed to TestRail
+                """)
             else:
                 st.warning("No test cases were generated")
                 
