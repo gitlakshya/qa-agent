@@ -4,7 +4,7 @@ An automated test case generation system that creates comprehensive test cases f
 
 ## Overview
 
-This application generates test cases from user stories and JIRA tickets using Azure OpenAI GPT-4. It exports test cases to Excel and automatically syncs them to TestRail using a file watcher service.
+This application generates test cases from user stories and JIRA tickets using Azure OpenAI GPT-4.1 It exports test cases to Excel and automatically syncs them to TestRail using a file watcher service.
 
 ## Features
 
@@ -30,7 +30,7 @@ Create a `.env` file with the following variables:
 # Azure OpenAI
 AZURE_INFERENCE_ENDPOINT=https://your-resource.openai.azure.com/
 AZURE_INFERENCE_CREDENTIAL=your-api-key
-AZURE_DEPLOYMENT_NAME=gpt-4
+AZURE_DEPLOYMENT_NAME=gpt-4.1
 
 # TestRail
 TESTRAIL_URL=https://your-instance.testrail.io
@@ -50,6 +50,33 @@ The application expects:
 - Read access to these directories for document processing and feature extraction
 
 ## Running with Docker
+
+### Setup Documentation Access
+
+Docker containers can only access files that are either copied into the image or mounted as volumes. Choose one option:
+
+**Option 1: Copy Files to Mounted Directories (Recommended)**
+
+Copy your documentation files to the `Related_docs/` folder:
+- Product documentation: `Related_docs/product.pdf`
+- Feature documentation: `Related_docs/Features/`
+
+In the Streamlit UI, use relative paths: `Related_docs/product.pdf`
+
+**Option 2: Add Volume Mounts**
+
+Edit `docker-compose.yml` to mount your documentation directories:
+
+```yaml
+volumes:
+  - ./test_cases_output:/app/test_cases_output
+  - ./Related_docs:/app/Related_docs
+  - C:/path/to/your/docs:/app/CustomDocs:ro
+```
+
+In the Streamlit UI, use container paths: `/app/CustomDocs/product.pdf`
+
+### Start Services
 
 1. Configure environment variables in `.env` file
 2. Start the services:
@@ -183,7 +210,3 @@ qa-agent/
 - Verify file format is `.xlsx`
 - Check file is not locked by another process
 - Review Docker logs: `docker-compose logs qa-agent-watcher`
-
-## License
-
-This project is licensed under the MIT License.
